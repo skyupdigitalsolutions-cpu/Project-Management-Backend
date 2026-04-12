@@ -11,7 +11,14 @@ const app = express();
 
 // ─── Security & Utility Middleware ───────────────────────────────────────────
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://projectmanagement-lemon.vercel.app/',        // allows any vercel subdomain
+  ],
+  credentials: true
+}));
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -23,6 +30,28 @@ app.get("/", (req, res) => {
     message: "Server is running",
     environment: process.env.NODE_ENV || "development",
   });
+});
+
+// ─── Seed Admin (run once, then remove) ──────────────────────────────────────
+app.get("/seed-admin", async (req, res) => {
+  try {
+    const bcrypt = require("bcryptjs");
+    const User = require("./models/users");
+    const existing = await User.findOne({ email: "admin@company.com" });
+    if (existing) return res.json({ message: "Admin already exists" });
+    const salt = await bcrypt.genSalt(10);
+    const password = await bcrypt.hash("admin123", salt);
+    await User.create({
+      name: "Admin",
+      email: "admin@company.com",
+      password,
+      role: "admin",
+      status: "active"
+    });
+    res.json({ message: "✅ Admin created! Email: admin@company.com / Password: admin123" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
