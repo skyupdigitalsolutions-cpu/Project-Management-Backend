@@ -12,11 +12,7 @@ const app = express();
 // ─── Security & Utility Middleware ───────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://projectmanagement-lemon.vercel.app/',        // allows any vercel subdomain
-  ],
+  origin: true,
   credentials: true
 }));
 app.use(morgan("dev"));
