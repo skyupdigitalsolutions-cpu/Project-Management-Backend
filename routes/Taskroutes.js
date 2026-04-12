@@ -9,8 +9,8 @@ const {
   deleteTask,
   bulkUpdateStatus,
   getTaskStats,
-} = require("../controllers/taskController");
-const { protect, authorise } = require("../middleware/Authmiddleware");
+} = require("../controllers/TaskController");
+const { protect, authorise } = require("../middleware/authMiddleware");
 
 // GET    /api/v1/tasks/stats          — Admin/Manager: counts per status (?project_id)
 // POST   /api/v1/tasks/bulk-status    — Admin/Manager: update status for multiple tasks at once

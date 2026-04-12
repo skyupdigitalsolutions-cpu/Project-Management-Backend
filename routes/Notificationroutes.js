@@ -12,7 +12,7 @@ const {
   sendNotification,
   replyToNotification,
 } = require("../controllers/Notificationcontroller");
-const { protect, authorise } = require("../middleware/Authmiddleware");
+const { protect, authorise } = require("../middleware/authMiddleware");
 
 // GET    /api/v1/notifications                  — Protected: own notifications (?is_read &type &page &limit)
 // GET    /api/v1/notifications/unread-count     — Protected: badge count only

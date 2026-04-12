@@ -8,7 +8,7 @@ const {
   deleteMeeting,
   resendNotification,
 } = require("../controllers/Meetingcontroller");
-const { protect, authorise } = require("../middleware/Authmiddleware");
+const { protect, authorise } = require("../middleware/authMiddleware");
 
 // GET    /api/v1/meetings          — all roles (filtered by role in controller)
 // POST   /api/v1/meetings          — admin/manager only

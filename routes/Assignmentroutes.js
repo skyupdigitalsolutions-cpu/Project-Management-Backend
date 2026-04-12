@@ -11,7 +11,7 @@ const {
   removeMember,
   getAssignmentTasks,
 } = require("../controllers/Assignmentcontroller");
-const { protect, authorise } = require("../middleware/Authmiddleware");
+const { protect, authorise } = require("../middleware/authMiddleware");
 
 // ── Wizard endpoint ────────────────────────────────────────────────────────────
 // POST   /api/assignments/wizard    — Admin/Manager: create full project in one shot

@@ -8,9 +8,9 @@ const {
   getAllReports,
   getUserReports,
   deleteReport,
-} = require("../controllers/DailyReportController");
+} = require("../controllers/Dailyreportcontroller");
 
-const { protect, authorise } = require("../middleware/Authmiddleware");
+const { protect, authorise } = require("../middleware/authMiddleware");
 
 // Static paths must be declared before /:id to avoid route conflicts
 

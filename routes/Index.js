@@ -10,7 +10,7 @@ const notificationRoutes = require("./Notificationroutes");
 const memberRoutes       = require("./Memberroutes");
 const assignmentRoutes   = require("./Assignmentroutes");
 const meetingRoutes      = require("./Meetingroutes");
-const dailyReportRoutes  = require("./DailyReportroutes");
+const Dailyreportroutes  = require("./Dailyreportroutes");
 
 router.use("/auth",          authRoutes);
 router.use("/users",         userRoutes);
@@ -21,6 +21,6 @@ router.use("/notifications", notificationRoutes);
 router.use("/members",       memberRoutes);
 router.use("/assignments",   assignmentRoutes);
 router.use("/meetings",      meetingRoutes);
-router.use("/daily-reports", dailyReportRoutes);
+router.use("/daily-reports", Dailyreportroutes);
 
 module.exports = router;
