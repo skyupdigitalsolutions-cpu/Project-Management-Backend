@@ -1,4 +1,5 @@
 const Task = require('../models/tasks');
+const Notification = require('../models/notification');
 const mongoose = require("mongoose");
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -49,6 +50,24 @@ const createTask = async (req, res) => {
       priority,
       due_date,
     });
+
+    // ── Notify the assigned user ──────────────────────────────────────────────
+    // Only send if the task is assigned to someone other than the creator
+    if (assigned_to && assigned_to.toString() !== req.user?._id?.toString()) {
+      try {
+        await Notification.create({
+          user_id:  assigned_to,
+          sender_id: req.user?._id ?? null,
+          message:  `You have been assigned a new task: "${title}"`,
+          type:     'task_assigned',
+          ref_id:   task._id,
+          ref_type: 'Task',
+        });
+      } catch (notifErr) {
+        // Non-fatal: log but don't fail the task creation response
+        console.error('Failed to create task notification:', notifErr.message);
+      }
+    }
 
     return res.status(201).json({ success: true, data: task });
   } catch (error) {
