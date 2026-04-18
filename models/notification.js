@@ -5,56 +5,47 @@ const NotificationSchema = mongoose.Schema(
     user_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,               // who receives the notification (or sender for outbox copy)
+      required: true,
     },
     sender_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      default: null,                // who sent the notification (null = system)
+      default: null,
     },
-    message: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+    message: { type: String, required: true, trim: true },
     type: {
       type: String,
       enum: [
         "task_assigned",
         "task_updated",
         "task_completed",
+        "task_delayed",
+        "task_reassigned",
+        "task_blocked",
         "project_assigned",
         "project_updated",
         "member_added",
         "member_removed",
         "deadline_reminder",
+        "permission_requested",
+        "permission_granted",
+        "permission_denied",
+        "leave_cover_assigned",
+        "auto_assign",
         "general",
         "meeting_invite",
       ],
       required: true,
     },
-    is_read: {
-      type: Boolean,
-      default: false,
-    },
-    ref_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      default: null,
-    },
+    is_read: { type: Boolean, default: false },
+    ref_id:  { type: mongoose.Schema.Types.ObjectId, default: null },
     ref_type: {
       type: String,
       enum: ["Task", "Project", "User", "ProjectMember", "Meeting", null],
       default: null,
     },
-    // ── Outbox fields ──────────────────────────────────────────────────────
-    is_sent: {
-      type: Boolean,
-      default: false,               // true = this doc is the sender's outbox copy
-    },
-    recipient_count: {
-      type: Number,
-      default: null,                // how many users received it (outbox only)
-    },
+    is_sent:         { type: Boolean, default: false },
+    recipient_count: { type: Number, default: null },
   },
   { timestamps: true }
 );
