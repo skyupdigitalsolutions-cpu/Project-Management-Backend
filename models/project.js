@@ -36,6 +36,13 @@ const ProjectSchema = mongoose.Schema(
       default: "other",
     },
 
+    // ── Complexity drives how many modules/tasks are generated ───────────
+    complexity: {
+      type: String,
+      enum: ["small", "medium", "large"],
+      default: "medium",
+    },
+
     status: {
       type: String,
       enum: ["planning", "active", "on-hold", "completed", "cancelled"],
