@@ -11,13 +11,8 @@ const handleError = (res, error, statusCode = 500) => {
   return res.status(statusCode).json({ success: false, message: error.message || "Internal server error" });
 };
 
-// ─── GET ALL USERS ───────────────────────────────────────────────────────────
 
-/**
- * GET /users
- * Admin/Manager only.
- * Filters: ?role= &department= &status= &page= &limit= &search=
- */
+
 const getAllUsers = async (req, res) => {
   try {
     const { role, department, status, page = 1, limit = 20, search } = req.query;

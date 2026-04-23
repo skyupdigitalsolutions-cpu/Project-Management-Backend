@@ -45,7 +45,8 @@ const TasksSchema = mongoose.Schema(
     assigned_to: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+      required: false,
     },
     assigned_by: {
       type: mongoose.Schema.Types.ObjectId,
@@ -82,7 +83,7 @@ const TasksSchema = mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["todo", "in-progress", "completed", "on-hold", "cancelled", "blocked"],
+      enum: ["todo", "in-progress", "completed", "on-hold", "cancelled", "blocked", "unassigned"],
       default: "todo",
     },
     priority: {

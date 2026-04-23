@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const upload = require("../middleware/uploadMiddleware");
 
 const {
   createProject,
@@ -8,6 +9,9 @@ const {
   updateProject,
   deleteProject,
   getProjectStats,
+  getProjectDocument,
+  generateProjectPlan,
+  uploadProjectDocument,
 } = require("../controllers/Projectcontroller");
 
 const {
@@ -37,7 +41,11 @@ const { protect, authorise } = require("../middleware/authMiddleware");
 
 // /stats before /:id, and /members/leave before /members/:member_id
 router.get("/stats",    protect, authorise("admin", "manager"), getProjectStats);
-router.post("/",        protect, authorise("admin", "manager"), createProject);
+// POST /api/v1/projects/generate-plan — AI-powered multi-type phase plan
+router.post("/generate-plan", protect, authorise("admin", "manager"), generateProjectPlan);
+router.post("/", protect, authorise("admin", "manager"), upload.single("document"), createProject);
+router.get("/:id/document", protect, getProjectDocument);
+router.patch("/:id/document", protect, authorise("admin", "manager"), upload.single("document"), uploadProjectDocument);
 router.get("/",         protect, getAllProjects);
 router.get("/:id",      protect, getProjectById);
 router.patch("/:id",    protect, authorise("admin", "manager"), updateProject);

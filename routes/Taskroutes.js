@@ -11,28 +11,20 @@ const {
   logDelay,
   updateProgress,
   handlePermission,
+  requestPermission,
   reassignTask,
   getTaskStats,
   getWorkloadOverview,
 } = require("../controllers/taskController");
 const { protect, authorise } = require("../middleware/authMiddleware");
+const upload = require("../middleware/uploadMiddleware");
 
-// ── Utility / collection routes (must come before /:id) ───────────────────────
-// GET    /api/v1/tasks/stats       — Admin/Manager: task counts per status
-// GET    /api/v1/tasks/workload    — Admin/Manager: per-employee workload overview
-// POST   /api/v1/tasks/bulk-status — Admin/Manager: update status for multiple tasks
-
-router.get( "/stats",        protect, authorise("admin", "manager"), getTaskStats);
+// ── Utility / collection routes ───────────────────────────────────────────────
+router.get( "/stats",        protect, getTaskStats); // scoped per role inside controller
 router.get( "/workload",     protect, authorise("admin", "manager"), getWorkloadOverview);
 router.post("/bulk-status",  protect, authorise("admin", "manager"), bulkUpdateStatus);
 
 // ── Main CRUD ─────────────────────────────────────────────────────────────────
-// POST   /api/v1/tasks             — Admin/Manager: create task
-// GET    /api/v1/tasks             — Protected: list tasks (supports filters)
-// GET    /api/v1/tasks/:id         — Protected: single task with full history
-// PATCH  /api/v1/tasks/:id         — Protected: update task fields
-// DELETE /api/v1/tasks/:id         — Admin/Manager: delete task
-
 router.post("/",    protect, authorise("admin", "manager"), createTask);
 router.get( "/",    protect, getAllTasks);
 router.get( "/:id", protect, getTaskById);
@@ -40,19 +32,20 @@ router.patch("/:id",protect, updateTask);
 router.delete("/:id", protect, authorise("admin", "manager"), deleteTask);
 
 // ── Progress tracking ─────────────────────────────────────────────────────────
-// PATCH  /api/v1/tasks/:id/progress  — Assigned employee / Manager: update % done
 router.patch("/:id/progress", protect, updateProgress);
 
 // ── Delay logging ─────────────────────────────────────────────────────────────
-// POST   /api/v1/tasks/:id/delay   — Assigned employee / Manager: log delay reason
 router.post("/:id/delay", protect, logDelay);
 
-// ── Permission handling ───────────────────────────────────────────────────────
-// PATCH  /api/v1/tasks/:id/permission — Admin only: grant or deny access
+// ── Permission: Admin grants or denies ────────────────────────────────────────
 router.patch("/:id/permission", protect, authorise("admin"), handlePermission);
 
+// ── Permission: Employee requests permission on a blocked task ────────────────
+// POST /api/tasks/:id/request-permission
+// Body: { reason: "I need access to the staging server to complete this task" }
+router.post("/:id/request-permission", protect, upload.array("attachments", 5), requestPermission);
+
 // ── Manual reassignment ────────────────────────────────────────────────────────
-// PATCH  /api/v1/tasks/:id/reassign — Admin/Manager: reassign to another employee
 router.patch("/:id/reassign", protect, authorise("admin", "manager"), reassignTask);
 
 module.exports = router;

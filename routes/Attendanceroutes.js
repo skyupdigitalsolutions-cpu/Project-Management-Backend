@@ -14,18 +14,7 @@ const {
 } = require("../controllers/Attendancecontroller");
 const { protect, authorise } = require("../middleware/authMiddleware");
 
-// POST   /api/v1/attendance/clock-in              — Employee: clock in for today
-// PATCH  /api/v1/attendance/clock-out             — Employee: clock out for today
-// GET    /api/v1/attendance/today                 — Employee: get own today's record
-// GET    /api/v1/attendance/my                    — Employee: get own history (?from &to &page &limit)
-// POST   /api/v1/attendance/mark-absent           — Admin/Manager: bulk mark users absent
-// GET    /api/v1/attendance/summary/:user_id      — Admin/Manager (or own): monthly summary (?month=YYYY-MM)
-// GET    /api/v1/attendance/user/:user_id         — Admin/Manager: view any user's history
-// GET    /api/v1/attendance                       — Admin/Manager: full log (?date &status &page &limit)
-// PATCH  /api/v1/attendance/:id                   — Admin only: manually correct a record
 
-// ⚠️Static paths (clock-in, clock-out, today, my, mark-absent, summary) must come
-//     before parameterised paths (/:id) to prevent route conflicts
 router.post("/clock-in",              protect, clockIn);
 router.patch("/clock-out",            protect, clockOut);
 router.get("/today",                  protect, getTodayStatus);

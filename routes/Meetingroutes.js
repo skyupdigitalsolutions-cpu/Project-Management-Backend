@@ -10,12 +10,7 @@ const {
 } = require("../controllers/Meetingcontroller");
 const { protect, authorise } = require("../middleware/authMiddleware");
 
-// GET    /api/v1/meetings          — all roles (filtered by role in controller)
-// POST   /api/v1/meetings          — admin/manager only
-// GET    /api/v1/meetings/:id      — all roles
-// PATCH  /api/v1/meetings/:id      — admin/manager only
-// DELETE /api/v1/meetings/:id      — admin/manager only
-// POST   /api/v1/meetings/:id/notify — admin/manager only: resend invite
+
 
 router.get("/",    protect, getMeetings);
 router.post("/",   protect, authorise("admin", "manager"), createMeeting);

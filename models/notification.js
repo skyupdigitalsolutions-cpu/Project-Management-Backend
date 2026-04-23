@@ -34,6 +34,10 @@ const NotificationSchema = mongoose.Schema(
         "auto_assign",
         "general",
         "meeting_invite",
+        // ── NEW: added for cron scheduler and smart assignment ──────────
+        "task_reminder",   // daily 9AM briefing sent by cronScheduler.js
+        "system_alert",    // admin alerts (overdue count, no-employee warnings)
+        "approval_requested", // employee asks approval on a project or general item
       ],
       required: true,
     },
@@ -41,7 +45,7 @@ const NotificationSchema = mongoose.Schema(
     ref_id:  { type: mongoose.Schema.Types.ObjectId, default: null },
     ref_type: {
       type: String,
-      enum: ["Task", "Project", "User", "ProjectMember", "Meeting", null],
+      enum: ["Task", "Project", "User", "ProjectMember", "Meeting", "Assignment", null],
       default: null,
     },
     is_sent:         { type: Boolean, default: false },

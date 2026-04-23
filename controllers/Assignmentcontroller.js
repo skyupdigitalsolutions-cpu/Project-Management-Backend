@@ -10,6 +10,7 @@ const {
   autoAssignProjectTasks,
   PROJECT_TYPE_ROLES,
 } = require("../services/autoAssignService");
+const { adaptiveAutoAssign } = require("../services/adaptiveAssignmentEngine");
 const { interpretRequirements, flattenModulesToDrafts } = require("../services/requirementInterpreter");
 const { scheduleTasks }                                  = require("../services/schedulingEngine");
 
@@ -234,8 +235,8 @@ const createProjectWizard = async (req, res) => {
         assignment_id: moduleAssignmentMap[draft.module_name] || null,
       }));
 
-      // Step 5: Auto-assign using smart engine (workload-aware, new project aware)
-      const createdTasks = await autoAssignProjectTasks(
+      // Step 5: Auto-assign using adaptive engine (4-case decision logic)
+      const { tasks: createdTasks, summary } = await adaptiveAutoAssign(
         project,
         draftsWithAssignments,
         req.user._id
@@ -253,12 +254,14 @@ const createProjectWizard = async (req, res) => {
 
       return res.status(201).json({
         success: true,
-        message: `Auto-plan complete: ${modules.length} modules, ${createdTasks.length} tasks created and assigned`,
+        message: `Auto-plan complete: ${modules.length} modules, ${createdTasks.length} tasks created`,
         data: {
           project,
-          modules_created: modules.length,
-          tasks_created:   createdTasks.length,
-          tasks:           createdTasks,
+          modules_created:    modules.length,
+          tasks_created:      createdTasks.length,
+          tasks:              createdTasks,
+          assignment_summary: summary,
+          // summary shape: { case1: N, case2: N, case3: N, case4: N, total: N }
         },
       });
     }
@@ -429,7 +432,33 @@ const getAssignments = async (req, res) => {
       .populate("project_id", "title status priority project_type")
       .sort({ createdAt: -1 });
 
-    return res.status(200).json({ success: true, data: assignments });
+    // Enrich with task counts AND members so the edit wizard can pre-populate team
+    const ids = assignments.map(a => a._id);
+    const [taskCounts, memberDocs] = await Promise.all([
+      Task.aggregate([
+        { $match: { assignment_id: { $in: ids } } },
+        { $group: { _id: '$assignment_id', count: { $sum: 1 } } },
+      ]),
+      AssignmentMember.find({ assignment_id: { $in: ids } })
+        .populate('user_id', 'name email department designation status'),
+    ]);
+    const countMap = Object.fromEntries(taskCounts.map(t => [t._id.toString(), t.count]));
+
+    // Group members by assignment_id
+    const memberMap = {};
+    for (const m of memberDocs) {
+      const aid = m.assignment_id.toString();
+      if (!memberMap[aid]) memberMap[aid] = [];
+      memberMap[aid].push(m);
+    }
+
+    const enriched = assignments.map(a => ({
+      ...a.toObject(),
+      task_count: countMap[a._id.toString()] ?? 0,
+      members: memberMap[a._id.toString()] ?? [],
+    }));
+
+    return res.status(200).json({ success: true, data: enriched });
   } catch (error) {
     return handleError(res, error);
   }
@@ -472,6 +501,18 @@ const updateAssignment = async (req, res) => {
     const updates = { ...req.body };
     delete updates._id;
     delete updates.project_id;
+
+    // Sync AssignmentMember collection when members array is provided
+    if (Array.isArray(updates.members)) {
+      await AssignmentMember.deleteMany({ assignment_id: id });
+      if (updates.members.length > 0) {
+        const docs = updates.members.map(uid => ({ assignment_id: id, user_id: uid }));
+        await AssignmentMember.insertMany(docs, { ordered: false }).catch(e => {
+          if (e.code !== 11000) throw e;
+        });
+      }
+      delete updates.members; // Don't store raw array on Assignment document
+    }
 
     const assignment = await Assignment.findByIdAndUpdate(
       id, { $set: updates }, { new: true, runValidators: true }
@@ -562,6 +603,253 @@ const getAssignmentTasks = async (req, res) => {
   }
 };
 
+/**
+ * POST /assignments/auto-assign-from-document
+ *
+ * Takes extracted task drafts returned by createProject (when a document was uploaded)
+ * and runs the full auto-assign pipeline on them.
+ *
+ * Body: { project_id, tasks: [{ title, description, required_role, required_department, priority, estimated_days }] }
+ */
+
+
+ 
+const autoAssignFromDocument = async (req, res) => {
+  try {
+    const { project_id, tasks } = req.body;
+
+    if (!project_id || !isValidObjectId(project_id)) {
+      return res.status(400).json({ success: false, message: "Valid project_id is required" });
+    }
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      return res.status(400).json({ success: false, message: "tasks array is required and must not be empty" });
+    }
+
+    const project = await Project.findById(project_id);
+    if (!project) return res.status(404).json({ success: false, message: "Project not found" });
+
+    const taggedDrafts = tasks.map(t => ({ ...t, _from_document: true }));
+    const { tasks: createdTasks, summary } = await adaptiveAutoAssign(project, taggedDrafts, req.user._id.toString());
+
+    return res.status(201).json({
+      success: true,
+      message: `${createdTasks.length} tasks processed from document`,
+      data: createdTasks,
+      assignment_summary: summary,
+    });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+const autoAssignForProject = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+
+    if (!isValidObjectId(project_id))
+      return res.status(400).json({ success: false, message: 'Invalid project_id' });
+
+    const project = await Project.findById(project_id);
+    if (!project)
+      return res.status(404).json({ success: false, message: 'Project not found' });
+
+    const { generateUnifiedProjectPlan } = require('../services/taskGenerationService');
+
+    // Use project_types array first, fall back to single project_type
+    const types = (project.project_types && project.project_types.length > 0)
+      ? project.project_types
+      : project.project_type
+        ? [project.project_type]
+        : ['other'];
+
+    const plan = generateUnifiedProjectPlan(types, project.description || '');
+    const phases = plan.phases || [];
+
+    if (phases.length === 0) {
+      return res.status(400).json({ success: false, message: 'No phases generated for the given project types' });
+    }
+
+    // ── Step 1: Wipe ALL existing assignments + tasks for this project ────────
+    // We do a full reset so the regenerated plan is always clean
+    const existingAssignments = await Assignment.find({ project_id }).select('_id');
+    const assignmentIds = existingAssignments.map(a => a._id);
+
+    await Promise.all([
+      Task.deleteMany({ project_id }),
+      AssignmentMember.deleteMany({ assignment_id: { $in: assignmentIds } }),
+      Assignment.deleteMany({ project_id }),
+    ]);
+
+    // ── Step 2: Rebuild assignments + tasks from phases ───────────────────────
+    // Map phase name → a sensible department label
+    const phaseDeptMap = {
+      'Planning': 'HR & Admin',
+      'Design':   'Graphic Design',
+      'Development': 'Web Design & Development',
+      'Marketing': 'Performance Marketing',
+      'Optimization': 'SEO',
+      'Launch':    'Web Design & Development',
+      'Monitoring': 'Web Design & Development',
+      'Content':    'Content Marketing',
+      'Social':     'Social Media Marketing',
+      'Analytics':  'Analytics & Reporting',
+      'Email':      'Email Marketing',
+    };
+
+    const getDeptForPhase = (phaseName) => {
+      for (const [key, dept] of Object.entries(phaseDeptMap)) {
+        if (phaseName.includes(key)) return dept;
+      }
+      return 'General';
+    };
+
+    let totalTasks = 0;
+    const createdPhases = [];
+
+    // Pre-load ALL active employees once to avoid N+1 queries
+    const allEmployees = await User.find({ status: 'active', role: 'employee' })
+      .select('_id name designation department');
+
+    // Helper: fuzzy dept match
+    const deptMatchesUser = (userDept, assignmentDept) => {
+      if (!userDept || !assignmentDept) return false;
+      const u = userDept.toLowerCase();
+      const a = assignmentDept.toLowerCase();
+      if (u === a) return true;
+      if (u.includes(a) || a.includes(u)) return true;
+      const tokens = a.split(/[\s&,]+/).filter(t => t.length > 2);
+      return tokens.some(tok => u.includes(tok));
+    };
+
+    // Round-robin counters per dept so tasks spread evenly across employees
+    const deptRoundRobin = {};
+
+    // Helper: pick best employee — designation match first, then round-robin within dept,
+    // then any employee. NEVER falls back to admin.
+    const pickEmployee = (roleHint, deptName) => {
+      // Build role keywords — handle "UI/UX Designer" → ["UI", "UX", "Designer"]
+      const roleWords = (roleHint || '')
+        .split(/[\/\s,]+/)
+        .map(w => w.toLowerCase().trim())
+        .filter(w => w.length > 2);
+
+      // 1. Designation match on any role word
+      if (roleWords.length > 0) {
+        const byRole = allEmployees.find(u =>
+          roleWords.some(word => u.designation?.toLowerCase().includes(word))
+        );
+        if (byRole) return byRole._id;
+      }
+
+      // 2. Round-robin among employees in the same department
+      const deptEmps = allEmployees.filter(u => deptMatchesUser(u.department, deptName));
+      if (deptEmps.length > 0) {
+        const key = deptName || '__all__';
+        deptRoundRobin[key] = ((deptRoundRobin[key] ?? -1) + 1) % deptEmps.length;
+        return deptEmps[deptRoundRobin[key]]._id;
+      }
+
+      // 3. Round-robin across ALL employees (project has employees from other depts)
+      if (allEmployees.length > 0) {
+        deptRoundRobin['__global__'] = ((deptRoundRobin['__global__'] ?? -1) + 1) % allEmployees.length;
+        return allEmployees[deptRoundRobin['__global__']]._id;
+      }
+
+      // 4. Absolute last resort — no employees exist in the system at all
+      return null;
+    };
+
+    for (const phase of phases) {
+      const dept = getDeptForPhase(phase.name);
+
+      const assignment = await Assignment.create({
+        project_id,
+        department:  dept,
+        title:       phase.name,
+        description: `Auto-generated: ${phase.name}`,
+        start_date:  project.start_date,
+        end_date:    project.end_date,
+        status:      'planning',
+      });
+
+      // Build task docs, collecting unique assignee IDs for AssignmentMember
+      const taskDocs = [];
+      const memberIdSet = new Set();
+
+     for (const t of (phase.tasks || [])) {
+  const roleKeyword = (t.role || '').split('/')[0].trim();
+  const employeeId  = pickEmployee(roleKeyword, dept);
+
+  // Never fall back to admin — leave unassigned if no employee found
+  if (!employeeId) {
+    console.warn(`[autoAssignForProject] No employee found for role="${roleKeyword}" dept="${dept}". Task "${t.title}" will be unassigned.`);
+  }
+
+  taskDocs.push({
+    project_id,
+    assignment_id:    assignment._id,
+    title:            t.title,
+    description:      t.role || '',
+    assigned_to:      employeeId || undefined,       // ← FIXED: no admin fallback
+    assigned_by:      req.user._id,
+    priority:         (t.priority || 'Medium').toLowerCase(),
+    status:           employeeId ? 'todo' : 'unassigned',  // ← FIXED: mark clearly
+    is_auto_assigned: true,
+    due_date:         project.end_date,
+  });
+
+  if (employeeId) memberIdSet.add(employeeId.toString());
+}
+
+      if (taskDocs.length > 0) {
+        await Task.insertMany(taskDocs);
+        totalTasks += taskDocs.length;
+      }
+
+      // ── Create AssignmentMember records for every unique assignee ──────────
+      // This is what the ProjectDetail view reads to show "Team Members"
+      if (memberIdSet.size > 0) {
+        const memberDocs = Array.from(memberIdSet).map(uid => ({
+          assignment_id: assignment._id,
+          user_id:       uid,
+        }));
+        await AssignmentMember.insertMany(memberDocs, { ordered: false }).catch(() => {});
+      }
+
+      // Also add all dept employees as members (so edit wizard shows checkboxes pre-filled)
+      const deptLow = dept.toLowerCase();
+      const deptTokens = deptLow.split(/[\s&,]+/).filter(t => t.length > 2);
+      const deptEmployees = allEmployees.filter(u => {
+        const uDept = u.department?.toLowerCase() || '';
+        return uDept === deptLow ||
+          uDept.includes(deptLow) ||
+          deptLow.includes(uDept) ||
+          deptTokens.some(tok => uDept.includes(tok));
+      });
+
+      if (deptEmployees.length > 0) {
+        const extraMembers = deptEmployees
+          .filter(u => !memberIdSet.has(u._id.toString()))
+          .map(u => ({ assignment_id: assignment._id, user_id: u._id }));
+        if (extraMembers.length > 0) {
+          await AssignmentMember.insertMany(extraMembers, { ordered: false }).catch(() => {});
+        }
+      }
+
+      createdPhases.push({ phase: phase.name, tasks: taskDocs.length, members: memberIdSet.size + deptEmployees.length });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Plan regenerated for types [${types.join(', ')}]: ${phases.length} phases, ${totalTasks} tasks`,
+      data: { types, phases_count: phases.length, tasks_created: totalTasks, phases: createdPhases },
+    });
+  } catch (error) {
+    console.error('autoAssignForProject error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   autoplanPreview,
   createProjectWizard,
@@ -573,4 +861,6 @@ module.exports = {
   addMember,
   removeMember,
   getAssignmentTasks,
+  autoAssignFromDocument,
+  autoAssignForProject,  // ← now defined above
 };

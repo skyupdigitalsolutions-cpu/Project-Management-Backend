@@ -1,5 +1,8 @@
 const express = require("express");
 const router  = express.Router();
+
+
+const { protect, authorise } = require("../middleware/authMiddleware");
 const {
   autoplanPreview,
   createProjectWizard,
@@ -11,11 +14,20 @@ const {
   addMember,
   removeMember,
   getAssignmentTasks,
+  autoAssignFromDocument,
+  autoAssignForProject,
 } = require("../controllers/Assignmentcontroller");
-const { protect, authorise } = require("../middleware/authMiddleware");
 
-// ── Auto-plan preview (no data saved — just returns the generated plan) ────────
-// POST /api/assignments/auto-plan-preview
+// ── NEW: Task Generation & Smart Assignment ───────────────────────────────────
+const {
+  getSupportedAssignmentTypes,
+  generateTaskPreview,
+  confirmGenerateTasks,
+  getAssignmentWorkload,
+  deleteAssignmentTasks,
+} = require("../controllers/assignmentTaskController");
+
+
 router.post(
   "/auto-plan-preview",
   protect,
@@ -23,14 +35,20 @@ router.post(
   autoplanPreview
 );
 
-// ── Full project wizard (auto_plan | auto_assign | manual) ────────────────────
-// POST /api/assignments/wizard
+
 router.post(
   "/wizard",
   protect,
   authorise("admin", "manager"),
   createProjectWizard
 );
+
+router.post("/auto-assign-from-document", protect, authorise("admin", "manager"), autoAssignFromDocument);
+
+router.post("/auto-assign/:project_id", protect, authorise("admin", "manager"), autoAssignForProject);
+
+
+router.get("/supported-types", protect, getSupportedAssignmentTypes);
 
 // ── Single assignment CRUD ────────────────────────────────────────────────────
 router.post("/",      protect, authorise("admin", "manager"), createAssignment);
@@ -43,7 +61,42 @@ router.delete("/:id", protect, authorise("admin", "manager"), deleteAssignment);
 router.post("/:id/members",            protect, authorise("admin", "manager"), addMember);
 router.delete("/:id/members/:user_id", protect, authorise("admin", "manager"), removeMember);
 
-// ── Assignment tasks ──────────────────────────────────────────────────────────
+// ── Assignment tasks (existing) ────────────────────────────────────────────────
 router.get("/:id/tasks", protect, getAssignmentTasks);
+
+
+router.post(
+  "/:id/generate-tasks/preview",
+  protect,
+  authorise("admin", "manager"),
+  generateTaskPreview
+);
+
+
+router.post(
+  "/:id/generate-tasks/confirm",
+  protect,
+  authorise("admin", "manager"),
+  confirmGenerateTasks
+);
+
+
+router.get(
+  "/:id/workload",
+  protect,
+  authorise("admin", "manager"),
+  getAssignmentWorkload
+);
+
+
+router.delete(
+  "/:id/tasks",
+  protect,
+  authorise("admin", "manager"),
+  deleteAssignmentTasks
+);
+
+
+
 
 module.exports = router;

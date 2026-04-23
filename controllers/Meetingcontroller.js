@@ -16,12 +16,7 @@ const PLATFORM_LABEL = { zoom: "Zoom", google_meet: "Google Meet", other: "Meeti
 
 // ─── CREATE MEETING ────────────--─────────────────────────────────────────────
 
-/**
- * POST /meetings
- * Admin or Manager only.
- * Body: { title, description, platform, meeting_link, scheduled_at, duration_minutes, invitee_ids }
- *   invitee_ids = [] or omitted → broadcast to ALL active users
- */
+
 const createMeeting = async (req, res) => {
   try {
     const {

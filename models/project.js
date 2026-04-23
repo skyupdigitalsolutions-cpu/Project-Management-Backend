@@ -18,25 +18,28 @@ const ProjectSchema = mongoose.Schema(
       required: [true, "Please assign a manager"],
     },
 
-    // ── Project type drives auto-assignment department matching ──────────
+    // Single project_type string — matches all controller & service usage
     project_type: {
       type: String,
       enum: [
-        "website",
-        "mobile_app",
-        "ecommerce",
-        "api_service",
-        "data_analytics",
-        "design",
-        "content",
-        "seo",
-        "marketing",
-        "other",
+        "website", "mobile_app", "ecommerce", "api_service",
+        "data_analytics", "design", "content", "seo", "marketing",
+        "admin_dashboard", "ai_features", "other",
       ],
       default: "other",
     },
 
-    // ── Complexity drives how many modules/tasks are generated ───────────
+    // Multi-select project types array — used by frontend wizard & plan generation
+    project_types: {
+      type: [String],
+      enum: [
+        "website", "mobile_app", "ecommerce", "api_service",
+        "data_analytics", "design", "content", "seo", "marketing",
+        "admin_dashboard", "ai_features", "other",
+      ],
+      default: [],
+    },
+
     complexity: {
       type: String,
       enum: ["small", "medium", "large"],
@@ -60,14 +63,24 @@ const ProjectSchema = mongoose.Schema(
     completed_at: { type: Date, default: null },
 
     client_info: {
-      name:         { type: String, default: null, trim: true },
+      clientName:   { type: String, default: null, trim: true },
+      companyName:  { type: String, default: null, trim: true },
       email:        { type: String, default: null, trim: true },
       phone:        { type: String, default: null, trim: true },
-      company:      { type: String, default: null, trim: true },
-      requirements: { type: String, default: null, trim: true },
-      budget:       { type: String, default: null, trim: true },
       website:      { type: String, default: null, trim: true },
+      address:      { type: String, default: null, trim: true },
+      budget:       { type: String, default: null, trim: true },
+      requirements: { type: String, default: null, trim: true },
+      notes:        { type: String, default: null, trim: true },
     },
+
+    plan_version: { type: Number, default: 1 },
+
+    // Document-driven creation
+    document_path:          { type: String, default: null, trim: true },
+    document_text:          { type: String, default: null, trim: true },
+    extracted_description:  { type: String, default: null, trim: true },
+    extracted_deliverables: [{ type: String, trim: true }],
   },
   { timestamps: true }
 );

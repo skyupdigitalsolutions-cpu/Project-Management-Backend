@@ -12,6 +12,7 @@ const assignmentRoutes   = require("./Assignmentroutes");
 const meetingRoutes      = require("./Meetingroutes");
 const Dailyreportroutes  = require("./Dailyreportroutes");
 const leaveRoutes        = require("./Leaveroutes");
+const emailRoutes        = require("./Emailroutes");
 
 router.use("/auth",          authRoutes);
 router.use("/users",         userRoutes);
@@ -24,5 +25,6 @@ router.use("/assignments",   assignmentRoutes);
 router.use("/meetings",      meetingRoutes);
 router.use("/daily-reports", Dailyreportroutes);
 router.use("/leaves",        leaveRoutes);
+router.use("/email",         emailRoutes);
 
 module.exports = router;

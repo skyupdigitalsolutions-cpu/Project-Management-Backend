@@ -10,8 +10,8 @@ const UserSchema = mongoose.Schema(
     email: {
       type: String,
       required: [true, "Enter your Mail"],
-      unique: true, // no duplicate emails
-      lowercase: true, // store as lowercase always
+      unique: true,
+      lowercase: true,
       trim: true,
       match: [/^\S+@\S+\.\S+$/, "Please enter a valid email"],
     },
@@ -19,7 +19,7 @@ const UserSchema = mongoose.Schema(
       type: String,
       required: [true, "Please enter a password"],
       minlength: 6,
-      select: false, // won't return password in queries by default
+      select: false,
     },
     phone: {
       type: String,
@@ -27,7 +27,7 @@ const UserSchema = mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["admin", "manager", "employee"], // controlled roles
+      enum: ["admin", "manager", "employee"],
       default: "employee",
     },
     department: {
@@ -48,6 +48,14 @@ const UserSchema = mongoose.Schema(
     joining_date: {
       type: Date,
       default: Date.now,
+    },
+
+   
+    dailyWorkingHours: {
+      type: Number,
+      default: 8,
+      min: [1, "Daily working hours must be at least 1"],
+      max: [24, "Daily working hours cannot exceed 24"],
     },
   },
   { timestamps: true }
