@@ -1,18 +1,19 @@
 /**
- * server.js  (UPDATED)
+ * server.js
  * ─────────────────────────────────────────────────────────────────────────────
- * CHANGES FROM ORIGINAL:
- *  1. Import workflowHandlers — registers event listeners on startup
- *  2. Both workflowHandlers and initCronJobs called after mongoose.connect()
- *     (must be after DB ready so service functions can query DB)
- *  3. Everything else unchanged
+ * CHANGES:
+ *  1. workflowHandlers and initCronJobs called after mongoose.connect()
+ *  2. express.text() body parser added for eSSL ADMS plain-text body
+ *  3. eSSL ADMS routes registered at ROOT level (/iclock/cdata)
+ *     because eSSL devices always append /iclock/cdata to the domain —
+ *     you cannot change the path on the device itself.
  *
- * STARTUP ORDER (important):
- *   1. Express app created + middleware registered
- *   2. mongoose.connect()
- *   3. require('./services/workflowHandlers')  ← registers event listeners
- *   4. initCronJobs()                          ← starts cron jobs
- *   5. app.listen()
+ *  Device setting on eSSL:
+ *    Server Address : project-management-backend-gvpy.onrender.com
+ *    Server Port    : 443
+ *  Device will call:
+ *    GET  https://project-management-backend-gvpy.onrender.com/iclock/cdata
+ *    POST https://project-management-backend-gvpy.onrender.com/iclock/cdata
  */
 
 const express  = require('express');
@@ -24,6 +25,12 @@ require('dotenv').config();
 
 const routes = require('./routes/Index');
 
+const {
+  admsHandshake,
+  getRequest,
+  admsReceiver,
+} = require('./controllers/EsslController');
+
 const app = express();
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
@@ -32,6 +39,19 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ─── eSSL ADMS plain-text body parser ────────────────────────────────────────
+// The device POSTs attendance logs as plain text, not JSON.
+// Must be registered before routes so req.body is available.
+app.use('/iclock/cdata',          express.text({ type: '*/*' }));
+app.use('/api/essl/iclock/cdata', express.text({ type: '*/*' }));
+
+// ─── eSSL ADMS Device Routes (ROOT level — device cannot use /api prefix) ────
+// These are called directly by the eSSL hardware, not by your frontend.
+// The device always calls /iclock/cdata — this path is hardcoded in firmware.
+app.get('/iclock/cdata',     admsHandshake);  // Device registration / clock sync
+app.post('/iclock/cdata',    admsReceiver);   // Device pushes attendance punch logs
+app.get('/iclock/getrequest', getRequest);    // Device polling for server commands
 
 const path = require('path');
 app.use('/uploads', require('./middleware/authMiddleware').protect, express.static(path.join(__dirname, 'uploads')));
@@ -81,18 +101,9 @@ mongoose
   .connect(MONGO_URI)
   .then(() => {
     console.log('Database connected!');
-
-    // ── STEP 1: Register event-driven workflow handlers ─────────────────────
-    // Must be called AFTER DB connect so handlers can query models.
-    // This registers listeners for: project:created, task:created,
-    // task:updated, leave:approved, workload:exceeded
     require('./services/workflowHandlers');
-
-    // ── STEP 2: Start cron jobs ─────────────────────────────────────────────
     const { initCronJobs } = require('./services/Cronscheduler');
     initCronJobs();
-
-    // ── STEP 3: Start HTTP server ───────────────────────────────────────────
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
     });
