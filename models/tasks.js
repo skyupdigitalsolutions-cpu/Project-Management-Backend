@@ -117,6 +117,10 @@ const TasksSchema = mongoose.Schema(
     // ── Department / role tag (for smart matching) ────────────────────────
     required_role: { type: String, default: null, trim: true },         // e.g. "frontend developer"
     required_department: { type: String, default: null, trim: true },
+
+    excel_import:        { type: Boolean, default: false, index: true },
+      subtask:             { type: String,  default: null,  trim: true  },
+      dependency_task_id:  { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null },
   },
   { timestamps: true }
 );
@@ -125,8 +129,10 @@ const TasksSchema = mongoose.Schema(
 TasksSchema.index({ assigned_to: 1, status: 1, priority: -1 });
 TasksSchema.index({ project_id: 1, status: 1 });
 TasksSchema.index({ due_date: 1, is_delayed: 1 });
-TasksSchema.index({ project_id: 1, module_name: 1 });        // for module-grouped views
-TasksSchema.index({ start_date: 1, end_date: 1 });            // for Gantt/timeline queries
+TasksSchema.index({ project_id: 1, module_name: 1 });        
+TasksSchema.index({ start_date: 1, end_date: 1 });    
+TasksSchema.index({ project_id: 1, excel_import: 1 });
+TasksSchema.index({ dependency_task_id: 1 });
 
 const Task = mongoose.model("Task", TasksSchema);
 module.exports = Task;

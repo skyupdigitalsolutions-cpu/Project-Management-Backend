@@ -1,8 +1,4 @@
-/**
- * controllers/taskController.js
- * Added: requestPermission — employee-initiated permission request on a blocked/pending task
- * Everything else unchanged from original.
- */
+
 
 const Task         = require('../models/tasks');
 const Notification = require('../models/notification');
@@ -111,6 +107,11 @@ const getAllTasks = async (req, res) => {
     if (requires_permission !== undefined) filter.requires_permission = requires_permission === 'true';
     if (permission_status)  filter.permission_status = permission_status;
 
+    const { required_role, required_department, excel_import } = req.query;
+if (required_role)     filter.required_role = { $regex: required_role.trim(), $options: 'i' };
+if (required_department) filter.required_department = { $regex: required_department.trim(), $options: 'i' };
+if (excel_import !== undefined) filter.excel_import = excel_import === 'true';
+
     const skip = (Number(page) - 1) * Number(limit);
     const [tasks, total] = await Promise.all([
       Task.find(filter)
@@ -119,6 +120,7 @@ const getAllTasks = async (req, res) => {
         .populate('assigned_by',          'name email')
         .populate('permission_granted_by','name email')
         .sort({ priority_score: -1, due_date: 1 })
+        .populate('dependency_task_id', 'title status')
         .skip(skip)
         .limit(Number(limit)),
       Task.countDocuments(filter),

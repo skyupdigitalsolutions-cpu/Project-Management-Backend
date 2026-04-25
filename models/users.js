@@ -49,13 +49,21 @@ const UserSchema = mongoose.Schema(
       type: Date,
       default: Date.now,
     },
-
-   
     dailyWorkingHours: {
       type: Number,
       default: 8,
       min: [1, "Daily working hours must be at least 1"],
       max: [24, "Daily working hours cannot exceed 24"],
+    },
+
+    // ─── eSSL Fingerprint Machine Integration ──────────────────────────────
+    // This is the Employee ID enrolled on the fingerprint machine.
+    // Must match exactly what the device stores (usually a number like "1", "2", etc.)
+    fingerprint_id: {
+      type: String,
+      default: null,
+      trim: true,
+      sparse: true, // allows multiple null values in unique index
     },
   },
   { timestamps: true }

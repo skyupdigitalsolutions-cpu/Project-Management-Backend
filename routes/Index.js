@@ -13,6 +13,7 @@ const meetingRoutes      = require("./Meetingroutes");
 const Dailyreportroutes  = require("./Dailyreportroutes");
 const leaveRoutes        = require("./Leaveroutes");
 const emailRoutes        = require("./Emailroutes");
+const esslRoutes         = require("./Esslroutes");   // ← NEW: eSSL Fingerprint Machine
 
 router.use("/auth",          authRoutes);
 router.use("/users",         userRoutes);
@@ -26,5 +27,6 @@ router.use("/meetings",      meetingRoutes);
 router.use("/daily-reports", Dailyreportroutes);
 router.use("/leaves",        leaveRoutes);
 router.use("/email",         emailRoutes);
+router.use("/essl",          esslRoutes);             // ← NEW: /api/essl/*
 
 module.exports = router;
