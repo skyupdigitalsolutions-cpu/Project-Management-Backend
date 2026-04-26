@@ -23,6 +23,7 @@ const {
   generateProjectPlan,
   uploadProjectDocument,
   getClientsForProject,
+  saveExcelTasksToProject,
 } = require('../controllers/Projectcontroller');
 
 const {
@@ -42,7 +43,16 @@ router.get('/clients-list',   protect,                                getClients
 router.post('/generate-plan', protect, authorise('admin', 'manager'), generateProjectPlan);
 
 // Main CRUD
-router.post('/', protect, authorise('admin', 'manager'), upload.single('document'), createProject);
+// Conditionally apply multer only when request is multipart (has a file upload)
+// Plain JSON requests (from wizard auto-save) must NOT go through multer
+const optionalUpload = (req, res, next) => {
+  const ct = req.headers['content-type'] || ''
+  if (ct.includes('multipart/form-data')) {
+    return upload.single('document')(req, res, next)
+  }
+  return next()
+}
+router.post('/', protect, authorise('admin', 'manager'), optionalUpload, createProject);
 router.get('/',  protect, getAllProjects);
 
 // Single project
@@ -58,6 +68,9 @@ router.patch('/:id/document', protect, authorise('admin', 'manager'),
 // Excel task import
 router.post('/:projectId/import', protect, authorise('admin', 'manager'),
   uploadExcel, importTasksFromExcelController);
+
+// Save excel template tasks to a project
+router.post('/:id/excel-tasks/save', protect, authorise('admin', 'manager'), saveExcelTasksToProject);
 
 // Nested member routes
 router.post('/:project_id/members',              protect, authorise('admin', 'manager'), addMember);

@@ -494,6 +494,66 @@ const uploadProjectDocument = async (req, res) => {
   }
 };
 
+
+// ─── SAVE EXCEL TEMPLATE TASKS TO PROJECT ────────────────────────────────────
+
+/**
+ * POST /projects/:id/excel-tasks/save
+ * Receives task rows from the global Excel template (already selected/confirmed
+ * by the user in the wizard) and creates Task documents for the project.
+ *
+ * Body: { tasks: [ { title, required_role, department, priority,
+ *                    estimated_hours, due_date, description, module } ] }
+ */
+const saveExcelTasksToProject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id))
+      return res.status(400).json({ success: false, message: 'Invalid project ID' });
+
+    const project = await Project.findById(id).select('title start_date end_date manager_id');
+    if (!project)
+      return res.status(404).json({ success: false, message: 'Project not found' });
+
+    const { tasks = [] } = req.body;
+    if (!Array.isArray(tasks) || tasks.length === 0)
+      return res.status(400).json({ success: false, message: 'No tasks provided' });
+
+    // Fallback due_date = project end_date or 30 days from now
+    const fallbackDueDate = project.end_date
+      ? new Date(project.end_date)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    const taskDocs = tasks.map((t, idx) => ({
+      project_id:         id,
+      title:              t.title?.trim() || `Task ${idx + 1}`,
+      description:        t.description  || t.required_role || '',
+      required_role:      t.required_role      || null,
+      required_department:t.department         || null,
+      priority:           (['low','medium','high','critical'].includes(t.priority))
+                            ? t.priority : 'medium',
+      status:             'unassigned',
+      due_date:           t.due_date ? new Date(t.due_date) : fallbackDueDate,
+      start_date:         project.start_date   || new Date(),
+      module_name:        t.module             || 'General',
+      estimated_hours:    t.estimated_hours    || null,
+      is_auto_assigned:   true,
+      excel_import:       true,
+      assigned_by:        req.user._id,
+    }));
+
+    const created = await Task.insertMany(taskDocs, { ordered: false });
+
+    return res.status(201).json({
+      success: true,
+      message: `${created.length} task(s) saved to project`,
+      data:    created,
+    });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
 module.exports = {
   createProject,
   getAllProjects,
@@ -505,4 +565,5 @@ module.exports = {
   generateProjectPlan,
   uploadProjectDocument,
   getClientsForProject,   // NEW
+  saveExcelTasksToProject,
 };

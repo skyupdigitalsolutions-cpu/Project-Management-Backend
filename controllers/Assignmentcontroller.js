@@ -278,6 +278,7 @@ const createProjectWizard = async (req, res) => {
 
         const assignment = await Assignment.create({
           ...assignmentFields,
+          title: assignmentFields.title?.trim() || `${project.title} — Tasks`,
           project_id: project._id,
         });
 
@@ -321,6 +322,7 @@ const createProjectWizard = async (req, res) => {
 
       const assignment = await Assignment.create({
         ...assignmentFields,
+        title: assignmentFields.title?.trim() || `${project.title} — Assignment ${createdAssignments.length + 1}`,
         project_id: project._id,
       });
 
