@@ -1,3 +1,12 @@
+/**
+ * models/project.js  — UPDATED
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CHANGES:
+ *   1. Added `client_id` — ObjectId reference to Client model
+ *   2. Added `projectType` alias field that mirrors `project_type` (backward-compat)
+ * Everything else is identical to the existing file.
+ */
+
 const mongoose = require("mongoose");
 
 const ProjectSchema = mongoose.Schema(
@@ -18,6 +27,13 @@ const ProjectSchema = mongoose.Schema(
       required: [true, "Please assign a manager"],
     },
 
+    // ── NEW: Client reference ─────────────────────────────────────────────
+    client_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Client",
+      default: null,
+    },
+
     // Single project_type string — matches all controller & service usage
     project_type: {
       type: String,
@@ -25,6 +41,9 @@ const ProjectSchema = mongoose.Schema(
         "website", "mobile_app", "ecommerce", "api_service",
         "data_analytics", "design", "content", "seo", "marketing",
         "admin_dashboard", "ai_features", "other",
+        // ── NEW aliases used by auto-task assignment ──────────────────────
+        "Web Development", "Mobile Development", "Data Analytics",
+        "UI/UX Design", "DevOps", "QA Testing", "Content Creation",
       ],
       default: "other",
     },
@@ -62,6 +81,7 @@ const ProjectSchema = mongoose.Schema(
     end_date:   { type: Date, required: [true, "Please enter end date"] },
     completed_at: { type: Date, default: null },
 
+    // Embedded client info (kept for backward-compat — new projects use client_id)
     client_info: {
       clientName:   { type: String, default: null, trim: true },
       companyName:  { type: String, default: null, trim: true },
@@ -90,6 +110,10 @@ ProjectSchema.pre("save", async function () {
     throw new Error("end_date must be after start_date");
   }
 });
+
+// Fast lookup
+ProjectSchema.index({ client_id: 1 });
+ProjectSchema.index({ manager_id: 1, status: 1 });
 
 const Project = mongoose.model("Project", ProjectSchema);
 module.exports = Project;

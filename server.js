@@ -7,6 +7,7 @@
  *  3. eSSL ADMS routes registered at ROOT level (/iclock/cdata)
  *     because eSSL devices always append /iclock/cdata to the domain —
  *     you cannot change the path on the device itself.
+ *  4. FIX: excelTemplateRoutes mounted BEFORE /api catch-all router
  *
  *  Device setting on eSSL:
  *    Server Address : project-management-backend-gvpy.onrender.com
@@ -49,9 +50,9 @@ app.use('/api/essl/iclock/cdata', express.text({ type: '*/*' }));
 // ─── eSSL ADMS Device Routes (ROOT level — device cannot use /api prefix) ────
 // These are called directly by the eSSL hardware, not by your frontend.
 // The device always calls /iclock/cdata — this path is hardcoded in firmware.
-app.get('/iclock/cdata',     admsHandshake);  // Device registration / clock sync
-app.post('/iclock/cdata',    admsReceiver);   // Device pushes attendance punch logs
-app.get('/iclock/getrequest', getRequest);    // Device polling for server commands
+app.get('/iclock/cdata',      admsHandshake);  // Device registration / clock sync
+app.post('/iclock/cdata',     admsReceiver);   // Device pushes attendance punch logs
+app.get('/iclock/getrequest', getRequest);     // Device polling for server commands
 
 const path = require('path');
 app.use('/uploads', require('./middleware/authMiddleware').protect, express.static(path.join(__dirname, 'uploads')));
@@ -77,6 +78,10 @@ app.get('/seed-admin', async (req, res) => {
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
+// FIX: excelTemplateRoutes must be mounted BEFORE app.use('/api', routes)
+// because the catch-all /api router would intercept the request first
+// and return 404 before excelTemplateRoutes ever gets a chance to handle it.
+app.use('/api/excel-template', require('./routes/excelTemplateRoutes'));
 app.use('/api', routes);
 
 // ─── 404 ─────────────────────────────────────────────────────────────────────

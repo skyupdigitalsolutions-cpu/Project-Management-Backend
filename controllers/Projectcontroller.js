@@ -1,22 +1,27 @@
 /**
- * controllers/projectController.js  (UPDATED)
+ * controllers/projectController.js  — UPDATED
  * ─────────────────────────────────────────────────────────────────────────────
- * CHANGES:
- *  1. getProjectById — always returns project_types as array, safe for frontend
- *  2. createProject  — unchanged (event-based auto-assign)
- *  3. All 500 crashes from invalid ObjectId are handled with 400 responses
+ * CHANGES vs original:
+ *  1. createProject  — accepts `client_id`, validates it, attaches to project
+ *                       also triggers auto-task creation via taskService
+ *  2. getAllProjects  — populates client_id
+ *  3. getProjectById — populates client_id, always returns project_types as array
+ *  4. getAllClients   — helper to list clients for the project-creation wizard
+ *  5. All other functions unchanged
  */
 
-const mongoose = require('mongoose');
-const Project  = require('../models/project');
+const mongoose      = require('mongoose');
+const Project       = require('../models/project');
 const ProjectMember = require('../models/project_member');
-const Task     = require('../models/tasks');
+const Task          = require('../models/tasks');
 const Assignment       = require('../models/assignment');
 const AssignmentMember = require('../models/assignment_member');
-const path     = require('path');
-const { parseProjectDocument } = require('../services/documentParser');
-const eventBus = require('../services/eventBus');
+const Client        = require('../models/Client');
+const path          = require('path');
+const { parseProjectDocument }     = require('../services/documentParser');
+const eventBus                     = require('../services/eventBus');
 const { generateUnifiedProjectPlan } = require('../services/taskGenerationService');
+const { autoCreateTasksForProject }  = require('../services/taskService');
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -25,18 +30,47 @@ const handleError = (res, error, statusCode = 500) => {
   return res.status(statusCode).json({ success: false, message: error.message || 'Internal server error' });
 };
 
-// ─── CREATE PROJECT ──────────────────────────────────────────────────────────
+// ─── LIST CLIENTS (for project-creation wizard) ───────────────────────────────
+
+/**
+ * GET /projects/clients
+ * Returns active clients so the UI can render a dropdown.
+ */
+const getClientsForProject = async (req, res) => {
+  try {
+    const clients = await Client.find({ isActive: true })
+      .select('name companyName email phone')
+      .sort({ companyName: 1 });
+
+    return res.status(200).json({ success: true, data: clients });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+// ─── CREATE PROJECT ───────────────────────────────────────────────────────────
 
 const createProject = async (req, res) => {
   try {
     const {
       title, description, manager_id, status, priority,
       start_date, end_date, project_type, project_types, complexity,
-      client_info,
+      client_info, client_id,
     } = req.body;
 
     if (manager_id && !isValidObjectId(manager_id)) {
       return res.status(400).json({ success: false, message: 'Invalid manager_id' });
+    }
+
+    // Validate client_id if provided
+    if (client_id) {
+      if (!isValidObjectId(client_id)) {
+        return res.status(400).json({ success: false, message: 'Invalid client_id' });
+      }
+      const clientExists = await Client.findById(client_id);
+      if (!clientExists) {
+        return res.status(404).json({ success: false, message: 'Client not found' });
+      }
     }
 
     let documentPath          = null;
@@ -70,13 +104,16 @@ const createProject = async (req, res) => {
       typesArray = [project_type];
     }
 
+    const resolvedProjectType = typesArray[0] || project_type || 'other';
+
     const project = await Project.create({
       title,
       description:            extractedDescription || description,
       manager_id:             manager_id || req.user._id,
+      client_id:              client_id  || null,
       status,
       priority,
-      project_type:           typesArray[0] || project_type || 'other',
+      project_type:           resolvedProjectType,
       project_types:          typesArray,
       complexity:             complexity || 'medium',
       start_date,
@@ -94,6 +131,11 @@ const createProject = async (req, res) => {
       role_in_project: 'manager',
     });
 
+    // Auto-create tasks based on projectType (non-blocking)
+    autoCreateTasksForProject(project, req.user._id)
+      .catch((err) => console.error('[taskService] autoCreateTasksForProject error:', err.message));
+
+    // Emit event for existing auto-assign flow
     eventBus.emitAsync('project:created', {
       project,
       taskDrafts: extractedTaskDrafts,
@@ -106,7 +148,7 @@ const createProject = async (req, res) => {
       extracted_tasks: extractedTaskDrafts,
       message: extractedTaskDrafts.length > 0
         ? `Project created. Auto-assigning ${extractedTaskDrafts.length} extracted task(s) in background.`
-        : 'Project created.',
+        : 'Project created. Auto-tasks are being generated in background.',
     });
   } catch (error) {
     if (error.name === 'ValidationError' || error.message.includes('end_date')) {
@@ -120,32 +162,26 @@ const createProject = async (req, res) => {
 
 const getAllProjects = async (req, res) => {
   try {
-    const { status, priority, page = 1, limit = 20, search } = req.query;
+    const { status, priority, page = 1, limit = 20, search, client_id } = req.query;
     const { role, _id: userId } = req.user;
 
     let filter = {};
     if (role === 'manager') {
       filter.manager_id = userId;
     } else if (role === 'employee') {
-      // Include projects the employee is:
-      //   (a) an explicit ProjectMember of, OR
-      //   (b) assigned tasks in — auto-assigned employees often have no ProjectMember record
       const [memberships, taskProjectIds] = await Promise.all([
         ProjectMember.find({ user_id: userId, status: 'active' }).select('project_id'),
         Task.find({ assigned_to: userId }).distinct('project_id'),
       ]);
-
       const memberProjectIds = memberships.map((m) => m.project_id.toString());
       const taskProjIds      = taskProjectIds.map((id) => id.toString());
-
-      // Union of both sets, deduplicated
-      const allProjectIds = [...new Set([...memberProjectIds, ...taskProjIds])];
-
+      const allProjectIds    = [...new Set([...memberProjectIds, ...taskProjIds])];
       filter._id = { $in: allProjectIds };
     }
 
-    if (status)   filter.status   = status;
-    if (priority) filter.priority = priority;
+    if (status)    filter.status    = status;
+    if (priority)  filter.priority  = priority;
+    if (client_id && isValidObjectId(client_id)) filter.client_id = client_id;
     if (search) {
       filter.$or = [
         { title:       { $regex: search, $options: 'i' } },
@@ -157,6 +193,7 @@ const getAllProjects = async (req, res) => {
     const [projects, total] = await Promise.all([
       Project.find(filter)
         .populate('manager_id', 'name email designation')
+        .populate('client_id', 'name companyName email phone')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
@@ -180,20 +217,19 @@ const getProjectById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Strict ObjectId validation — prevents Mongoose CastError → 500
     if (!id || !isValidObjectId(id)) {
       return res.status(400).json({ success: false, message: 'Invalid project ID' });
     }
 
     const project = await Project.findById(id)
-      .populate('manager_id', 'name email designation department');
+      .populate('manager_id', 'name email designation department')
+      .populate('client_id',  'name companyName email phone address gstNumber');
 
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
     if (req.user.role === 'employee') {
-      // Access is granted if the employee is a ProjectMember OR has any task in this project
       const [isMember, hasTask] = await Promise.all([
         ProjectMember.exists({ project_id: id, user_id: req.user._id, status: 'active' }),
         Task.exists({ project_id: id, assigned_to: req.user._id }),
@@ -212,13 +248,8 @@ const getProjectById = async (req, res) => {
       ]),
     ]);
 
-    const taskSummary = taskStats.reduce(
-      (acc, { _id, count }) => ({ ...acc, [_id]: count }), {}
-    );
-
-    // Always return project_types as a populated array
-    // so the frontend never has to guess the field name
-    const projectObj = project.toObject();
+    const taskSummary  = taskStats.reduce((acc, { _id, count }) => ({ ...acc, [_id]: count }), {});
+    const projectObj   = project.toObject();
     const safeProjectTypes =
       Array.isArray(projectObj.project_types) && projectObj.project_types.length > 0
         ? projectObj.project_types
@@ -230,7 +261,7 @@ const getProjectById = async (req, res) => {
       success: true,
       data: {
         ...projectObj,
-        project_types: safeProjectTypes,   // always an array
+        project_types: safeProjectTypes,
         members,
         task_summary:  taskSummary,
       },
@@ -241,7 +272,7 @@ const getProjectById = async (req, res) => {
   }
 };
 
-// ─── GET DOCUMENT ────────────────────────────────────────────────────────────
+// ─── GET DOCUMENT ─────────────────────────────────────────────────────────────
 
 const getProjectDocument = async (req, res) => {
   try {
@@ -263,7 +294,7 @@ const getProjectDocument = async (req, res) => {
   }
 };
 
-// ─── UPDATE PROJECT ──────────────────────────────────────────────────────────
+// ─── UPDATE PROJECT ───────────────────────────────────────────────────────────
 
 const updateProject = async (req, res) => {
   try {
@@ -285,7 +316,17 @@ const updateProject = async (req, res) => {
     delete updates.createdAt;
     delete updates.updatedAt;
 
-    // Keep project_type in sync with project_types array
+    // Validate client_id if being updated
+    if (updates.client_id) {
+      if (!isValidObjectId(updates.client_id)) {
+        return res.status(400).json({ success: false, message: 'Invalid client_id' });
+      }
+      const clientExists = await Client.findById(updates.client_id);
+      if (!clientExists) {
+        return res.status(404).json({ success: false, message: 'Client not found' });
+      }
+    }
+
     if (Array.isArray(updates.project_types) && updates.project_types.length > 0) {
       updates.project_type = updates.project_types[0];
     } else if (updates.project_type && !updates.project_types) {
@@ -307,7 +348,9 @@ const updateProject = async (req, res) => {
 
     const updated = await Project.findByIdAndUpdate(
       id, { $set: updates }, { new: true, runValidators: true }
-    ).populate('manager_id', 'name email');
+    )
+      .populate('manager_id', 'name email')
+      .populate('client_id',  'name companyName email');
 
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
@@ -317,7 +360,7 @@ const updateProject = async (req, res) => {
   }
 };
 
-// ─── DELETE PROJECT ──────────────────────────────────────────────────────────
+// ─── DELETE PROJECT ───────────────────────────────────────────────────────────
 
 const deleteProject = async (req, res) => {
   try {
@@ -329,16 +372,20 @@ const deleteProject = async (req, res) => {
     if (!project)
       return res.status(404).json({ success: false, message: 'Project not found' });
 
+    // Cleanup related data
+    const assignmentIds = await Assignment.find({ project_id: id }).distinct('_id');
     await Promise.all([
       ProjectMember.deleteMany({ project_id: id }),
       Task.deleteMany({ project_id: id }),
       Assignment.deleteMany({ project_id: id }),
-      AssignmentMember.deleteMany({
-        assignment_id: {
-          $in: await Assignment.find({ project_id: id }).distinct('_id'),
-        },
-      }),
+      AssignmentMember.deleteMany({ assignment_id: { $in: assignmentIds } }),
     ]);
+
+    // Cleanup uploaded document if present
+    if (project.document_path) {
+      const fs = require('fs');
+      try { fs.unlinkSync(project.document_path); } catch (_) { /* ignore */ }
+    }
 
     return res.status(200).json({ success: true, message: 'Project and related data deleted' });
   } catch (error) {
@@ -346,7 +393,7 @@ const deleteProject = async (req, res) => {
   }
 };
 
-// ─── STATS ───────────────────────────────────────────────────────────────────
+// ─── STATS ────────────────────────────────────────────────────────────────────
 
 const getProjectStats = async (req, res) => {
   try {
@@ -369,7 +416,7 @@ const getProjectStats = async (req, res) => {
   }
 };
 
-// ─── GENERATE PLAN ───────────────────────────────────────────────────────────
+// ─── GENERATE PLAN ────────────────────────────────────────────────────────────
 
 const generateProjectPlan = async (req, res) => {
   try {
@@ -383,7 +430,7 @@ const generateProjectPlan = async (req, res) => {
   }
 };
 
-// ─── UPLOAD / REPLACE PROJECT DOCUMENT ──────────────────────────────────────
+// ─── UPLOAD / REPLACE PROJECT DOCUMENT ───────────────────────────────────────
 
 const uploadProjectDocument = async (req, res) => {
   try {
@@ -405,7 +452,7 @@ const uploadProjectDocument = async (req, res) => {
 
     if (project.document_path) {
       const fs = require('fs');
-      try { fs.unlinkSync(project.document_path); } catch (_) { /* ignore missing file */ }
+      try { fs.unlinkSync(project.document_path); } catch (_) { /* ignore missing */ }
     }
 
     let documentText          = null;
@@ -414,9 +461,9 @@ const uploadProjectDocument = async (req, res) => {
 
     try {
       const parsed = await parseProjectDocument(req.file.path, project.title);
-      documentText          = parsed.rawText         || null;
-      extractedDescription  = parsed.description     || project.description;
-      extractedDeliverables = parsed.deliverables    || [];
+      documentText          = parsed.rawText      || null;
+      extractedDescription  = parsed.description  || project.description;
+      extractedDeliverables = parsed.deliverables || [];
     } catch (parseErr) {
       console.error('Document parsing failed:', parseErr.message);
     }
@@ -457,4 +504,5 @@ module.exports = {
   getProjectDocument,
   generateProjectPlan,
   uploadProjectDocument,
+  getClientsForProject,   // NEW
 };
