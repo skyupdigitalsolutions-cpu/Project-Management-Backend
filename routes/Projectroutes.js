@@ -23,7 +23,7 @@ const {
   generateProjectPlan,
   uploadProjectDocument,
   getClientsForProject,
-} = require('../controllers/projectController');
+} = require('../controllers/Projectcontroller');
 
 const {
   addMember,
